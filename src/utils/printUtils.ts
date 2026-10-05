@@ -170,7 +170,6 @@ export const generateBillHtml = (bill: BillPrintData, copiesCount: number = 1): 
   const spacerMinHeight = Math.max(80, 520 - products.length * 26);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const ganeshaImgUrl = `${origin}/ganesha.jpg`;
   const brandImgUrl = storeSettings.logoUrl || `${origin}/logo.png`;
 
   const copyLabels = ['ORIGINAL', 'DUPLICATE', 'TRIPLICATE', 'EXTRA COPY'];
@@ -229,10 +228,10 @@ export const generateBillHtml = (bill: BillPrintData, copiesCount: number = 1): 
 
       <!-- Main Bordered Container -->
       <div class="bill-box">
-        <!-- Header: Ganesha (Left) | Title (Center) | Vaishnavi Logo (Right) -->
+        <!-- Header: Vaishnavi Logo (Left) | Title (Center) -->
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 2px 10px 6px 10px; border-bottom: 1.5px solid #000000;">
-          <div style="width: 75px; text-align: center; flex-shrink: 0;">
-            <img src="${ganeshaImgUrl}" alt="Ganesha" style="max-height: 68px; max-width: 72px; object-fit: contain; display: block; margin: 0 auto;" />
+          <div style="width: 85px; text-align: center; flex-shrink: 0;">
+            <img src="${brandImgUrl}" alt="Vaishnavi Crackers" style="max-height: 68px; max-width: 85px; object-fit: contain; display: block; margin: 0 auto;" />
           </div>
 
           <div style="flex: 1; text-align: center; padding: 0 8px;">
@@ -262,9 +261,7 @@ export const generateBillHtml = (bill: BillPrintData, copiesCount: number = 1): 
             ` : ''}
           </div>
 
-          <div style="width: 85px; text-align: center; flex-shrink: 0;">
-            <img src="${brandImgUrl}" alt="Vaishnavi Crackers" style="max-height: 68px; max-width: 85px; object-fit: contain; display: block; margin: 0 auto;" />
-          </div>
+          <div style="width: 85px; flex-shrink: 0;"></div>
         </div>
 
         <!-- 3-Column Section: To | Delivery To | Invoice Meta -->
