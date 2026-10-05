@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 500;
+
+  color-scheme: light;
+  color: #0B0F19;
+  background-color: #F8FAFC;
+
+  /* Blue, Black & Yellow Luxury Theme Variables */
+  --primary-blue: #1D4ED8;
+  --primary-blue-dark: #1E3A8A;
+  --primary-blue-light: #EFF6FF;
+  --primary-black: #0B0F19;
+  --primary-black-surface: #111827;
+  --primary-black-card: #1E293B;
+  --primary-yellow: #EAB308;
+  --primary-yellow-accent: #FACC15;
+  --primary-yellow-dark: #CA8A04;
+  --primary-yellow-light: #FEF9C3;
+  --border-subtle: #E2E8F0;
+  --border-yellow-glow: rgba(234, 179, 8, 0.4);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #FFFFFF;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: #FFFFFF;
+}
