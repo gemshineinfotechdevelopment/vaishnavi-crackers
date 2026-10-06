@@ -9,6 +9,7 @@ import { ProductsPage } from './components/ProductsPage';
 import { AllCustomersPage } from './components/AllCustomersPage';
 import { AddCustomerPage } from './components/AddCustomerPage';
 import { ParticularsPage } from './components/ParticularsPage';
+import { ManualBillingPage } from './components/ManualBillingPage';
 import { EwayBillPage } from './components/EwayBillPage';
 import { SettingsPage, getStoredSettings, DEFAULT_COMPANY_SETTINGS } from './components/SettingsPage';
 import { SettingsApi } from './services/api';
@@ -16,7 +17,16 @@ import { SettingsApi } from './services/api';
 const ACTIVE_TAB_KEY = 'vaishnavi_active_tab';
 const CUSTOMER_SUBVIEW_KEY = 'vaishnavi_customer_subview';
 
-const VALID_TABS = ['All Customers', 'Billing', 'e-Way Bill', 'Categories', 'Price List', 'Product', 'Settings'] as const;
+const VALID_TABS = [
+  'All Customers',
+  'Billing',
+  'Manual Billing',
+  'e-Way Bill',
+  'Categories',
+  'Price List',
+  'Product',
+  'Settings',
+] as const;
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -182,6 +192,9 @@ function App() {
               onEditSuccess={handleEditBillSuccess}
             />
           )}
+
+          {/* Manual Billing Tab */}
+          {activeTab === 'Manual Billing' && <ManualBillingPage />}
 
           {/* e-Way Bill Tab */}
           {activeTab === 'e-Way Bill' && <EwayBillPage />}

@@ -36,7 +36,9 @@ export interface EwayBillData {
   partBPortal?: string;
 
   // Meta
+  billId?: string;
   approxDistance?: number;
+  status?: 'ACTIVE' | 'CANCELLED' | 'EXPIRED';
   remarks?: string;
 }
 

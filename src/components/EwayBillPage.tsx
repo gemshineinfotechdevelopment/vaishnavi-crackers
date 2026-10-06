@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -35,6 +35,13 @@ import LocalShippingRoundedIcon from '@mui/icons-material/LocalShippingRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded';
+import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 
 import { EwayBillsApi, ParticularsApi, CustomersApi } from '../services/api';
 import { getStoredSettings } from './SettingsPage';
@@ -82,6 +89,19 @@ const formatDateOnly = (dateObj: Date = new Date()) => {
   return `${dd}/${mm}/${yyyy}`;
 };
 
+const parseEwayDate = (dateStr: string): Date => {
+  if (!dateStr) return new Date();
+  const match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1;
+    const year = parseInt(match[3], 10);
+    const d = new Date(year, month, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
+};
+
 export const EwayBillPage: React.FC = () => {
   const [bills, setBills] = useState<EwayBillData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,17 +110,21 @@ export const EwayBillPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Modals
+  // Modals & Refs
+  const previewContainerRef = useRef<HTMLDivElement>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<EwayBillData | null>(null);
   const [previewBill, setPreviewBill] = useState<EwayBillData | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [cancelConfirmItem, setCancelConfirmItem] = useState<EwayBillData | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
-  // Available Bills to import
+  // Available Bills & Customers to import
   const [existingBills, setExistingBills] = useState<any[]>([]);
   const [existingCustomers, setExistingCustomers] = useState<any[]>([]);
   const [selectedImportBillId, setSelectedImportBillId] = useState<string>('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
 
   // Form State
   const initialFormState: EwayBillData = {
@@ -138,6 +162,7 @@ export const EwayBillPage: React.FC = () => {
     partBPortal: '1',
 
     approxDistance: 100,
+    status: 'ACTIVE',
     remarks: '',
   };
 
@@ -155,7 +180,7 @@ export const EwayBillPage: React.FC = () => {
       setErrorMsg('');
     } catch (err: any) {
       console.error('Failed to fetch E-Way bills:', err);
-      setErrorMsg('Failed to load e-Way Bills. Make sure server is running.');
+      setErrorMsg('Failed to load e-Way Bills. Make sure the server is running.');
     } finally {
       setLoading(false);
     }
@@ -196,7 +221,7 @@ export const EwayBillPage: React.FC = () => {
     const city = settings.city || 'Sivakasi';
     const state = settings.state || 'TAMIL NADU';
     const pincode = settings.pincode ? `-${settings.pincode}` : '-626123';
-    const dispatchPlace = `${city},${state}${pincode}`;
+    const dispatchPlace = `${city}, ${state}${pincode}`;
     const generatedBy = supplierGstin ? `${supplierGstin} - ${supplierName}` : supplierName;
 
     // Fetch next eway bill number
@@ -227,9 +252,11 @@ export const EwayBillPage: React.FC = () => {
       fromPlace: city,
       enteredBy: supplierGstin || supplierName,
       enteredDate: ewayDateStr,
+      status: 'ACTIVE',
     });
     setEditItem(null);
     setSelectedImportBillId('');
+    setSelectedCustomerId('');
     setCreateModalOpen(true);
   };
 
@@ -237,7 +264,30 @@ export const EwayBillPage: React.FC = () => {
     setEditItem(bill);
     setFormData({ ...bill });
     setSelectedImportBillId('');
+    setSelectedCustomerId('');
     setCreateModalOpen(true);
+  };
+
+  // Handle Quick Select from Customer List
+  const handleSelectCustomer = (customerId: string) => {
+    setSelectedCustomerId(customerId);
+    if (!customerId) return;
+    const cust = existingCustomers.find((c) => (c._id || c.id) === customerId);
+    if (!cust) return;
+
+    const custGstin = cust.gstNumber || cust.gstin || cust.gst || 'URP';
+    const custCity = cust.city || '';
+    const custAddress = cust.address || '';
+    const custState = cust.state || 'TAMIL NADU';
+    const custPin = cust.pincode ? `-${cust.pincode}` : '';
+    const deliveryPlace = [custAddress, custCity, `${custState}${custPin}`].filter(Boolean).join(', ');
+
+    setFormData((prev) => ({
+      ...prev,
+      recipientName: cust.name || cust.customerName || prev.recipientName,
+      recipientGstin: custGstin,
+      deliveryPlace: deliveryPlace || `${custCity || 'Sivakasi'}, TAMIL NADU`,
+    }));
   };
 
   // Handle Import from Existing Bill
@@ -250,7 +300,7 @@ export const EwayBillPage: React.FC = () => {
 
     const custName = b.customerName || '';
     const cust = existingCustomers.find(
-      (c) => c.name?.toLowerCase() === custName.toLowerCase()
+      (c) => (c.name || '').toLowerCase() === custName.toLowerCase()
     );
 
     const custGstin = b.customerGst || cust?.gstNumber || 'URP';
@@ -258,11 +308,16 @@ export const EwayBillPage: React.FC = () => {
     const custAddress = b.customerAddress || cust?.address || '';
     const deliveryPlace = [custAddress, custCity, 'TAMIL NADU'].filter(Boolean).join(', ');
 
-    const totalVal = b.grandTotal || b.totalAmount || b.total || 0;
+    const rawTotal = b.grandTotal || b.totalAmount || b.total || 0;
+    const totalVal = typeof rawTotal === 'number'
+      ? rawTotal
+      : parseFloat(String(rawTotal).replace(/,/g, '')) || 0;
+
     const docDate = b.date || formatDateOnly();
 
     setFormData((prev) => ({
       ...prev,
+      billId: b._id || b.id,
       recipientName: custName,
       recipientGstin: custGstin,
       deliveryPlace: deliveryPlace || `${custCity}, TAMIL NADU-626203`,
@@ -272,15 +327,20 @@ export const EwayBillPage: React.FC = () => {
       docType: b.billType === 'GST' ? 'Tax Invoice' : 'Bill of Supply',
       reasonForTransportation: 'Outward - Supply',
       hsnCode: '3604 - FIREWORKS',
+      vehicleNo: b.vehicleNo || prev.vehicleNo || '',
+      transporter: b.transport || prev.transporter || '',
     }));
   };
 
-  // Distance change -> Recalculate validity
-  const handleDistanceChange = (dist: number) => {
+  // Distance change -> Recalculate validity duration
+  const handleDistanceChange = (distInput: number | string) => {
+    const rawNum = typeof distInput === 'number' ? distInput : parseFloat(distInput);
+    const dist = isNaN(rawNum) || rawNum < 1 ? 100 : rawNum;
     const daysValid = Math.max(1, Math.ceil(dist / 100)); // 1 day per 100km
-    const now = new Date();
-    const untilDate = new Date();
-    untilDate.setDate(now.getDate() + daysValid);
+
+    const baseDate = parseEwayDate(formData.ewayBillDate);
+    const untilDate = new Date(baseDate);
+    untilDate.setDate(baseDate.getDate() + daysValid);
 
     const validFromStr = `${formData.ewayBillDate} [${dist}Kms]`;
     const validUntilStr = formatDateOnly(untilDate);
@@ -305,14 +365,21 @@ export const EwayBillPage: React.FC = () => {
       return;
     }
 
+    const payload = {
+      ...formData,
+      valueOfGoods: typeof formData.valueOfGoods === 'number'
+        ? formData.valueOfGoods
+        : parseFloat(String(formData.valueOfGoods || 0).replace(/,/g, '')) || 0,
+    };
+
     setSubmitting(true);
     setErrorMsg('');
     try {
       if (editItem && editItem._id) {
-        await EwayBillsApi.update(editItem._id, formData);
+        await EwayBillsApi.update(editItem._id, payload);
         setSuccessMsg('e-Way Bill updated successfully');
       } else {
-        await EwayBillsApi.create(formData);
+        await EwayBillsApi.create(payload);
         setSuccessMsg('e-Way Bill generated successfully');
       }
       setCreateModalOpen(false);
@@ -324,11 +391,24 @@ export const EwayBillPage: React.FC = () => {
     }
   };
 
+  // Cancel E-Way Bill Action
+  const handleCancelBill = async (bill: EwayBillData) => {
+    if (!bill._id) return;
+    try {
+      await EwayBillsApi.update(bill._id, { ...bill, status: 'CANCELLED' });
+      setSuccessMsg(`e-Way Bill #${bill.ewayBillNo} marked as CANCELLED`);
+      setCancelConfirmItem(null);
+      fetchEwayBills();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to cancel e-Way Bill');
+    }
+  };
+
   // Delete E-Way Bill
   const handleDelete = async (id: string) => {
     try {
       await EwayBillsApi.delete(id);
-      setSuccessMsg('e-Way Bill removed');
+      setSuccessMsg('e-Way Bill deleted successfully');
       setDeleteConfirmId(null);
       fetchEwayBills();
     } catch (err: any) {
@@ -336,11 +416,11 @@ export const EwayBillPage: React.FC = () => {
     }
   };
 
-  // Print Action
+  // Direct Print Action
   const handlePrint = (bill: EwayBillData) => {
     const printWindow = window.open('', '_blank', 'width=900,height=950');
     if (!printWindow) {
-      alert('Please allow popups to print e-Way Bill');
+      alert('Please allow popups to print the official e-Way Bill');
       return;
     }
 
@@ -585,20 +665,79 @@ export const EwayBillPage: React.FC = () => {
           <div class="footer-note">
             Note: If any discrepancy in information please try after sometime.
           </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-            };
-          </script>
         </body>
       </html>
     `);
     printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 350);
+  };
+
+  // WhatsApp Share Action
+  const handleShareWhatsApp = (bill: EwayBillData) => {
+    const cleanNo = bill.ewayBillNo || '';
+    const val = typeof bill.valueOfGoods === 'number'
+      ? bill.valueOfGoods.toLocaleString('en-IN')
+      : String(bill.valueOfGoods || 0);
+
+    const text =
+      `*Official e-Way Bill - Vaishnavi Crackers Sivakasi*\n\n` +
+      `📄 *e-Way Bill No:* ${cleanNo}\n` +
+      `📅 *Date:* ${bill.ewayBillDate}\n` +
+      `👤 *Recipient / Customer:* ${bill.recipientName} (${bill.recipientGstin || 'URP'})\n` +
+      `📑 *Document No:* ${bill.docNo} (${bill.docType || 'Tax Invoice'})\n` +
+      `💰 *Value of Goods:* ₹ ${val}\n` +
+      `🚛 *Vehicle No:* ${bill.vehicleNo || 'Not Assigned'}\n` +
+      `🚚 *Transporter:* ${bill.transporter || 'Direct Road Transport'}\n` +
+      `📦 *Dispatch From:* ${bill.dispatchPlace || 'Sivakasi, Tamil Nadu'}\n` +
+      `📍 *Delivery Place:* ${bill.deliveryPlace || '-'}\n` +
+      `⏳ *Valid Until:* ${bill.validUntil || '-'}\n\n` +
+      `_Generated in accordance with GST Rules for fireworks transport compliance._`;
+
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, '_blank');
+  };
+
+  // Download PDF Action
+  const handleDownloadPdf = async (bill: EwayBillData) => {
+    if (!previewContainerRef.current) return;
+    setDownloadingPdf(true);
+    try {
+      const cleanNo = (bill.ewayBillNo || 'EWB').replace(/[^a-zA-Z0-9]/g, '');
+      const filename = `eWayBill_${cleanNo}.pdf`;
+      const opt = {
+        margin: [4, 5, 4, 5] as [number, number, number, number],
+        filename: filename,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#FFFFFF',
+        },
+        jsPDF: {
+          unit: 'mm',
+          format: 'a4',
+          orientation: 'portrait' as const,
+        },
+      };
+
+      const worker = html2pdf().set(opt).from(previewContainerRef.current);
+      await worker.save();
+      setSuccessMsg(`e-Way Bill downloaded successfully as ${filename}`);
+    } catch (err) {
+      console.error('Failed to export PDF:', err);
+      setErrorMsg('Failed to generate PDF download.');
+    } finally {
+      setDownloadingPdf(false);
+    }
   };
 
   // Metrics calculation
   const totalBillsCount = bills.length;
+  const activeBillsCount = useMemo(() => bills.filter((b) => (b.status || 'ACTIVE') === 'ACTIVE').length, [bills]);
   const totalGoodsValue = useMemo(() => {
     return bills.reduce((sum, b) => {
       const val = typeof b.valueOfGoods === 'number'
@@ -629,7 +768,7 @@ export const EwayBillPage: React.FC = () => {
             </Typography>
           </Box>
           <Typography variant="body2" sx={{ color: '#666', mt: 0.3 }}>
-            Generate, manage, and print official GST Electronic Way Bills for fireworks dispatch
+            Generate, manage, print and share official GST Electronic Way Bills for fireworks dispatch
           </Typography>
         </Box>
 
@@ -676,7 +815,7 @@ export const EwayBillPage: React.FC = () => {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(4, 1fr)' },
           gap: 2,
           mb: 3,
         }}
@@ -691,10 +830,28 @@ export const EwayBillPage: React.FC = () => {
         >
           <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
             <Typography variant="caption" sx={{ color: '#777', fontWeight: 700, textTransform: 'uppercase' }}>
-              Total e-Way Bills Generated
+              Total Generated
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 800, color: '#1976d2', mt: 0.5 }}>
               {totalBillsCount}
+            </Typography>
+          </CardContent>
+        </Card>
+
+        <Card
+          sx={{
+            borderRadius: 2,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            border: '1px solid #e8e8e8',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+          }}
+        >
+          <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+            <Typography variant="caption" sx={{ color: '#777', fontWeight: 700, textTransform: 'uppercase' }}>
+              Active Convoys
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 800, color: '#16a34a', mt: 0.5 }}>
+              {activeBillsCount}
             </Typography>
           </CardContent>
         </Card>
@@ -709,9 +866,9 @@ export const EwayBillPage: React.FC = () => {
         >
           <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
             <Typography variant="caption" sx={{ color: '#777', fontWeight: 700, textTransform: 'uppercase' }}>
-              Total Value of Goods Moved
+              Total Goods Value
             </Typography>
-            <Typography variant="h4" sx={{ fontWeight: 800, color: '#2e7d32', mt: 0.5 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: '#2e7d32', mt: 0.8 }}>
               ₹ {totalGoodsValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </Typography>
           </CardContent>
@@ -727,9 +884,9 @@ export const EwayBillPage: React.FC = () => {
         >
           <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
             <Typography variant="caption" sx={{ color: '#777', fontWeight: 700, textTransform: 'uppercase' }}>
-              Dispatch Location
+              Dispatch Center
             </Typography>
-            <Typography variant="h6" sx={{ fontWeight: 800, color: '#6a1b9a', mt: 0.5 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#6a1b9a', mt: 0.8 }}>
               Sivakasi, Tamil Nadu
             </Typography>
           </CardContent>
@@ -792,7 +949,7 @@ export const EwayBillPage: React.FC = () => {
           overflow: 'hidden',
         }}
       >
-        <Table sx={{ minWidth: 850 }}>
+        <Table sx={{ minWidth: 900 }}>
           <TableHead sx={{ backgroundColor: '#f8fafc' }}>
             <TableRow>
               <TableCell sx={{ fontWeight: 800, color: '#334155', fontSize: '12px' }}>E-WAY BILL NO</TableCell>
@@ -801,7 +958,7 @@ export const EwayBillPage: React.FC = () => {
               <TableCell sx={{ fontWeight: 800, color: '#334155', fontSize: '12px' }}>DOC NO / TYPE</TableCell>
               <TableCell sx={{ fontWeight: 800, color: '#334155', fontSize: '12px' }}>VALUE OF GOODS</TableCell>
               <TableCell sx={{ fontWeight: 800, color: '#334155', fontSize: '12px' }}>VEHICLE NO</TableCell>
-              <TableCell sx={{ fontWeight: 800, color: '#334155', fontSize: '12px' }}>VALID UNTIL</TableCell>
+              <TableCell sx={{ fontWeight: 800, color: '#334155', fontSize: '12px' }}>STATUS</TableCell>
               <TableCell sx={{ fontWeight: 800, color: '#334155', fontSize: '12px', textAlign: 'center' }}>ACTIONS</TableCell>
             </TableRow>
           </TableHead>
@@ -840,6 +997,8 @@ export const EwayBillPage: React.FC = () => {
                 const valNum = typeof bill.valueOfGoods === 'number'
                   ? bill.valueOfGoods
                   : parseFloat(String(bill.valueOfGoods || 0).replace(/,/g, '')) || 0;
+
+                const status = bill.status || 'ACTIVE';
 
                 return (
                   <TableRow
@@ -884,12 +1043,23 @@ export const EwayBillPage: React.FC = () => {
                         }}
                       />
                     </TableCell>
-                    <TableCell sx={{ fontSize: '12.5px', fontWeight: 600, color: '#334155' }}>
-                      {bill.validUntil}
+                    <TableCell>
+                      <Chip
+                        label={status}
+                        size="small"
+                        sx={{
+                          fontWeight: 700,
+                          fontSize: '10.5px',
+                          backgroundColor:
+                            status === 'ACTIVE' ? '#dcfce7' : status === 'CANCELLED' ? '#fee2e2' : '#fef3c7',
+                          color:
+                            status === 'ACTIVE' ? '#15803d' : status === 'CANCELLED' ? '#b91c1c' : '#b45309',
+                        }}
+                      />
                     </TableCell>
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                        <Tooltip title="View & Print Official Slip">
+                        <Tooltip title="View, Print & Share Slip">
                           <IconButton
                             size="small"
                             color="primary"
@@ -899,16 +1069,36 @@ export const EwayBillPage: React.FC = () => {
                             <PrintRoundedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
+                        <Tooltip title="Share on WhatsApp">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleShareWhatsApp(bill)}
+                            sx={{ backgroundColor: '#f0fdf4', color: '#16a34a', '&:hover': { backgroundColor: '#dcfce7' } }}
+                          >
+                            <WhatsAppIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Edit e-Way Bill">
                           <IconButton
                             size="small"
                             color="info"
                             onClick={() => handleOpenEditModal(bill)}
-                            sx={{ backgroundColor: '#f0fdf4', '&:hover': { backgroundColor: '#dcfce7' } }}
+                            sx={{ backgroundColor: '#f8fafc', '&:hover': { backgroundColor: '#e2e8f0' } }}
                           >
                             <EditRoundedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
+                        {status === 'ACTIVE' && (
+                          <Tooltip title="Cancel e-Way Bill">
+                            <IconButton
+                              size="small"
+                              onClick={() => setCancelConfirmItem(bill)}
+                              sx={{ backgroundColor: '#fff7ed', color: '#ea580c', '&:hover': { backgroundColor: '#ffedd5' } }}
+                            >
+                              <BlockRoundedIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         <Tooltip title="Delete">
                           <IconButton
                             size="small"
@@ -959,47 +1149,86 @@ export const EwayBillPage: React.FC = () => {
 
         <form onSubmit={handleSubmit}>
           <DialogContent dividers sx={{ p: { xs: 2, sm: 3 } }}>
-            {/* Quick 1-Click Import from Bill */}
-            {!editItem && existingBills.length > 0 && (
-              <Paper
-                sx={{
-                  p: 2,
-                  mb: 3,
-                  backgroundColor: '#f0f7ff',
-                  border: '1px solid #bfdbfe',
-                  borderRadius: 2,
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <ReceiptLongRoundedIcon sx={{ color: '#1d4ed8', fontSize: 20 }} />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1e40af' }}>
-                    Quick Auto-Fill: Import from Existing Customer Bill
-                  </Typography>
-                </Box>
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Select a Customer Bill to Auto-Fill Consignment Details"
-                  value={selectedImportBillId}
-                  onChange={(e) => handleImportBill(e.target.value)}
-                  sx={{ backgroundColor: '#ffffff' }}
-                >
-                  <MenuItem value="">-- Select Bill to Auto-Fill --</MenuItem>
-                  {existingBills.slice(0, 50).map((b) => (
-                    <MenuItem key={b._id || b.id} value={b._id || b.id}>
-                      Bill #{b.billNo || b.invoiceNo} — {b.customerName} (₹{b.grandTotal || b.totalAmount || 0}) [{b.date}]
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Paper>
+            {/* Quick Auto-Fill Sections for new e-Way Bill */}
+            {!editItem && (
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 3 }}>
+                {/* 1. Quick Import from Bill */}
+                {existingBills.length > 0 && (
+                  <Paper
+                    sx={{
+                      p: 1.8,
+                      backgroundColor: '#f0f7ff',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: 2,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <ReceiptLongRoundedIcon sx={{ color: '#1d4ed8', fontSize: 18 }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1e40af', fontSize: '12px' }}>
+                        Import from Customer Bill
+                      </Typography>
+                    </Box>
+                    <TextField
+                      select
+                      fullWidth
+                      size="small"
+                      label="Select Bill to Auto-Fill All Details"
+                      value={selectedImportBillId}
+                      onChange={(e) => handleImportBill(e.target.value)}
+                      sx={{ backgroundColor: '#ffffff' }}
+                    >
+                      <MenuItem value="">-- Select Bill --</MenuItem>
+                      {existingBills.slice(0, 50).map((b) => (
+                        <MenuItem key={b._id || b.id} value={b._id || b.id}>
+                          Bill #{b.billNo || b.invoiceNo} — {b.customerName} (₹{b.grandTotal || b.totalAmount || b.total || 0})
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Paper>
+                )}
+
+                {/* 2. Quick Select from Customer List */}
+                {existingCustomers.length > 0 && (
+                  <Paper
+                    sx={{
+                      p: 1.8,
+                      backgroundColor: '#f6fbf7',
+                      border: '1px solid #bbf7d0',
+                      borderRadius: 2,
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <PersonOutlineRoundedIcon sx={{ color: '#15803d', fontSize: 18 }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#166534', fontSize: '12px' }}>
+                        Auto-Fill Recipient from Customers
+                      </Typography>
+                    </Box>
+                    <TextField
+                      select
+                      fullWidth
+                      size="small"
+                      label="Select Customer"
+                      value={selectedCustomerId}
+                      onChange={(e) => handleSelectCustomer(e.target.value)}
+                      sx={{ backgroundColor: '#ffffff' }}
+                    >
+                      <MenuItem value="">-- Select Customer --</MenuItem>
+                      {existingCustomers.map((c) => (
+                        <MenuItem key={c._id || c.id} value={c._id || c.id}>
+                          {c.name || c.customerName} ({c.city || 'Sivakasi'})
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Paper>
+                )}
+              </Box>
             )}
 
             {/* Top Validity Section */}
             <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0f172a', mb: 1.5 }}>
               1. E-Way Bill Validity & Generation Details
             </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 2 }}>
               <TextField
                 label="E-Way Bill No."
                 fullWidth
@@ -1019,15 +1248,15 @@ export const EwayBillPage: React.FC = () => {
               />
             </Box>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2, mb: 2 }}>
               <TextField
                 label="Approx Distance (in Kms)"
                 type="number"
                 fullWidth
                 size="small"
                 value={formData.approxDistance || 100}
-                onChange={(e) => handleDistanceChange(Number(e.target.value))}
-                helperText="Auto calculates validity duration"
+                onChange={(e) => handleDistanceChange(e.target.value)}
+                helperText="Auto-computes 1 day per 100km validity"
               />
               <TextField
                 label="Valid From"
@@ -1045,7 +1274,7 @@ export const EwayBillPage: React.FC = () => {
               />
             </Box>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr' }, gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr 1fr' }, gap: 2, mb: 3 }}>
               <TextField
                 label="Generated By (GSTIN & Name)"
                 fullWidth
@@ -1060,6 +1289,18 @@ export const EwayBillPage: React.FC = () => {
                 value={formData.portal || '1'}
                 onChange={(e) => setFormData({ ...formData, portal: e.target.value })}
               />
+              <TextField
+                select
+                label="Status"
+                fullWidth
+                size="small"
+                value={formData.status || 'ACTIVE'}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+              >
+                <MenuItem value="ACTIVE">ACTIVE</MenuItem>
+                <MenuItem value="CANCELLED">CANCELLED</MenuItem>
+                <MenuItem value="EXPIRED">EXPIRED</MenuItem>
+              </TextField>
             </Box>
 
             <Divider sx={{ my: 2.5 }} />
@@ -1092,7 +1333,7 @@ export const EwayBillPage: React.FC = () => {
                 size="small"
                 value={formData.dispatchPlace}
                 onChange={(e) => setFormData({ ...formData, dispatchPlace: e.target.value })}
-                placeholder="e.g. Virudhunagar, TAMIL NADU-626203"
+                placeholder="e.g. Sivakasi, TAMIL NADU-626123"
               />
             </Box>
 
@@ -1196,12 +1437,12 @@ export const EwayBillPage: React.FC = () => {
 
             <Box sx={{ mb: 3 }}>
               <TextField
-                label="Transporter Name / Transporter ID (if any)"
+                label="Transporter Name / ID (if any)"
                 fullWidth
                 size="small"
                 value={formData.transporter || ''}
                 onChange={(e) => setFormData({ ...formData, transporter: e.target.value })}
-                placeholder="e.g. VRL Logistics / TN Transporters"
+                placeholder="e.g. VRL Logistics / Direct Dispatch"
               />
             </Box>
 
@@ -1294,7 +1535,7 @@ export const EwayBillPage: React.FC = () => {
         </form>
       </Dialog>
 
-      {/* OFFICIAL SLIP PREVIEW & PRINT MODAL */}
+      {/* OFFICIAL SLIP PREVIEW, PRINT & SHARE MODAL */}
       <Dialog
         open={Boolean(previewBill)}
         onClose={() => setPreviewBill(null)}
@@ -1311,7 +1552,7 @@ export const EwayBillPage: React.FC = () => {
           }}
         >
           <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            e-Way Bill Print Preview
+            Official e-Way Bill Preview & Actions
           </Typography>
           <IconButton onClick={() => setPreviewBill(null)} size="small">
             <CloseRoundedIcon />
@@ -1322,6 +1563,7 @@ export const EwayBillPage: React.FC = () => {
           {previewBill && (
             <Paper
               elevation={2}
+              ref={previewContainerRef}
               sx={{
                 p: { xs: 1.5, sm: 3 },
                 maxWidth: '800px',
@@ -1335,20 +1577,88 @@ export const EwayBillPage: React.FC = () => {
           )}
         </DialogContent>
 
-        <DialogActions sx={{ p: 2, px: 3, borderTop: '1px solid #e5e7eb', justifyContent: 'space-between' }}>
+        <DialogActions
+          sx={{
+            p: 2,
+            px: 3,
+            borderTop: '1px solid #e5e7eb',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 1.5,
+          }}
+        >
           <Button onClick={() => setPreviewBill(null)} sx={{ textTransform: 'none', color: '#666' }}>
             Close
           </Button>
+
           {previewBill && (
-            <Button
-              variant="contained"
-              startIcon={<PrintRoundedIcon />}
-              onClick={() => handlePrint(previewBill)}
-              sx={{ textTransform: 'none', fontWeight: 700, px: 3, backgroundColor: '#1976d2' }}
-            >
-              Print e-Way Bill Slip
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1.2, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                startIcon={<WhatsAppIcon />}
+                onClick={() => handleShareWhatsApp(previewBill)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  color: '#16a34a',
+                  borderColor: '#bbf7d0',
+                  '&:hover': { backgroundColor: '#f0fdf4', borderColor: '#86efac' },
+                }}
+              >
+                Share on WhatsApp
+              </Button>
+
+              <Button
+                variant="outlined"
+                startIcon={downloadingPdf ? <CircularProgress size={16} /> : <PictureAsPdfRoundedIcon />}
+                disabled={downloadingPdf}
+                onClick={() => handleDownloadPdf(previewBill)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  color: '#dc2626',
+                  borderColor: '#fecaca',
+                  '&:hover': { backgroundColor: '#fef2f2', borderColor: '#fca5a5' },
+                }}
+              >
+                Download PDF
+              </Button>
+
+              <Button
+                variant="contained"
+                startIcon={<PrintRoundedIcon />}
+                onClick={() => handlePrint(previewBill)}
+                sx={{ textTransform: 'none', fontWeight: 700, px: 3, backgroundColor: '#1976d2' }}
+              >
+                Print Slip
+              </Button>
+            </Box>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* CANCEL CONFIRMATION DIALOG */}
+      <Dialog open={Boolean(cancelConfirmItem)} onClose={() => setCancelConfirmItem(null)}>
+        <DialogTitle sx={{ fontWeight: 700, color: '#c2410c' }}>
+          Cancel e-Way Bill
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: '#444' }}>
+            Are you sure you want to mark e-Way Bill #{cancelConfirmItem?.ewayBillNo} as <strong>CANCELLED</strong>?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setCancelConfirmItem(null)} sx={{ textTransform: 'none' }}>
+            Back
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => cancelConfirmItem && handleCancelBill(cancelConfirmItem)}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
+          >
+            Confirm Cancellation
+          </Button>
         </DialogActions>
       </Dialog>
 

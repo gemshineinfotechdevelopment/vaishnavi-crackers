@@ -26,11 +26,20 @@ import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
 import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumberedRounded';
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import LocalShippingRoundedIcon from '@mui/icons-material/LocalShippingRounded';
+import PostAddRoundedIcon from '@mui/icons-material/PostAddRounded';
 import defaultBrandLogo from '../assets/logo.png';
 import { getStoredSettings, type CompanySettings } from './SettingsPage';
 import { HealthApi, API_BASE_URL } from '../services/api';
 
-export type NavTab = 'All Customers' | 'Billing' | 'e-Way Bill' | 'Categories' | 'Price List' | 'Product' | 'Settings';
+export type NavTab =
+  | 'All Customers'
+  | 'Billing'
+  | 'Manual Billing'
+  | 'e-Way Bill'
+  | 'Categories'
+  | 'Price List'
+  | 'Product'
+  | 'Settings';
 
 interface NavbarProps {
   activeTab?: NavTab;
@@ -41,6 +50,7 @@ interface NavbarProps {
 const TAB_ICONS: Record<NavTab, React.ReactElement> = {
   'All Customers': <PeopleAltRoundedIcon sx={{ fontSize: 20 }} />,
   'Billing': <ReceiptLongRoundedIcon sx={{ fontSize: 20 }} />,
+  'Manual Billing': <PostAddRoundedIcon sx={{ fontSize: 20 }} />,
   'e-Way Bill': <LocalShippingRoundedIcon sx={{ fontSize: 20 }} />,
   'Categories': <CategoryRoundedIcon sx={{ fontSize: 20 }} />,
   'Price List': <FormatListNumberedRoundedIcon sx={{ fontSize: 20 }} />,
@@ -53,7 +63,16 @@ export const Navbar: FC<NavbarProps> = ({
   onSelectTab,
   onLogout,
 }) => {
-  const tabs: NavTab[] = ['All Customers', 'Billing', 'e-Way Bill', 'Categories', 'Price List', 'Product', 'Settings'];
+  const tabs: NavTab[] = [
+    'All Customers',
+    'Billing',
+    'Manual Billing',
+    'e-Way Bill',
+    'Categories',
+    'Price List',
+    'Product',
+    'Settings',
+  ];
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [companySettings, setCompanySettings] = useState<CompanySettings>(getStoredSettings);
