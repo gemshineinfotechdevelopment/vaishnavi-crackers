@@ -1,5 +1,6 @@
 import React from 'react';
-import ganeshaImg from '../assets/ganesha.jpg';
+import defaultBrandLogo from '../assets/logo.png';
+import { getStoredSettings } from './SettingsPage';
 
 export interface ManualBillItem {
   id: string;
@@ -24,6 +25,7 @@ export interface ManualBillData {
   companyName?: string;
   companyAddress?: string;
   gstin?: string;
+  logoUrl?: string;
 
   items: ManualBillItem[];
 
@@ -152,6 +154,9 @@ export const ManualBillPrintTemplate: React.FC<ManualBillPrintTemplateProps> = (
   const borderBlue = '1px solid #003399';
   const borderBlueThick = '1.5px solid #003399';
 
+  const storeSettings = getStoredSettings();
+  const logoSrc = data.logoUrl || storeSettings.logoUrl || defaultBrandLogo;
+
   return (
     <div
       className="manual-bill-printable"
@@ -188,20 +193,19 @@ export const ManualBillPrintTemplate: React.FC<ManualBillPrintTemplateProps> = (
         </div>
       )}
 
-      {/* TOP ROW: Ganesha + Invoice No + Date + Customer */}
+      {/* TOP ROW: Logo + Invoice No + Date + Customer */}
       <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '4px' }}>
-        {/* Top Left: Ganesha Image */}
+        {/* Top Left: Company / Store Logo */}
         <div style={{ width: '80px', flexShrink: 0, textAlign: 'center', marginRight: '6px' }}>
           <img
-            src={ganeshaImg}
-            alt="Lord Ganesha"
+            src={logoSrc}
+            alt="Store Logo"
             style={{
-              width: '65px',
-              height: '65px',
+              width: '70px',
+              height: '70px',
               objectFit: 'contain',
               display: 'block',
               margin: '0 auto',
-              filter: 'contrast(120%)',
             }}
           />
         </div>
