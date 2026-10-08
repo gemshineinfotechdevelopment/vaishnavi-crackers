@@ -55,7 +55,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import Tesseract from 'tesseract.js';
 import { PriceListsApi, CategoriesApi, ProductsApi } from '../services/api';
 import { getStoredSettings } from './SettingsPage';
-import { formatProductCode } from '../utils/productUtils';
+import { formatProductCode, inferCategoryFromProductName, STANDARD_CRACKER_CATEGORIES } from '../utils/productUtils';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -197,6 +197,7 @@ export const PriceListPage: FC = () => {
       if (Array.isArray(priceData)) {
         mergedItems = priceData.map((item: any) => ({
           ...item,
+          category: inferCategoryFromProductName(item.itemName, item.category || 'General'),
         }));
       }
 
@@ -216,10 +217,52 @@ export const PriceListPage: FC = () => {
     fetchData();
   }, []);
 
+  // Dynamically compute all categories and their product counts from items & Categories collection
+  const categoryListWithCounts = useMemo(() => {
+    const map = new Map<string, { name: string; color?: string; count: number }>();
+
+    // 1. Pre-populate standard cracker categories
+    STANDARD_CRACKER_CATEGORIES.forEach((catName) => {
+      const key = catName.toLowerCase();
+      map.set(key, { name: catName, color: undefined, count: 0 });
+    });
+
+    // 2. Add categories from Categories API
+    categories.forEach((cat) => {
+      const cleanName = (cat.name || '').trim();
+      if (cleanName) {
+        const key = cleanName.toLowerCase();
+        if (map.has(key)) {
+          map.get(key)!.color = cat.color;
+        } else {
+          map.set(key, { name: cleanName, color: cat.color, count: 0 });
+        }
+      }
+    });
+
+    // 3. Add and count categories from all price items
+    items.forEach((item) => {
+      const catName = inferCategoryFromProductName(item.itemName, item.category);
+      const key = catName.toLowerCase();
+      if (map.has(key)) {
+        const entry = map.get(key)!;
+        entry.count += 1;
+      } else {
+        map.set(key, { name: catName, color: undefined, count: 1 });
+      }
+    });
+
+    const list = Array.from(map.values()).filter((c) => c.count > 0);
+    return list.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [categories, items]);
+
   // Filtered price items
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      const matchesCat = selectedCategory === 'ALL' || item.category === selectedCategory;
+      const itemCat = (item.category || 'General').trim().toLowerCase();
+      const selCat = selectedCategory.trim().toLowerCase();
+      const matchesCat = selectedCategory === 'ALL' || itemCat === selCat;
+
       const rawTerm = searchTerm.trim().replace(/^#+/, '');
       if (!rawTerm) return matchesCat;
       const term = rawTerm.toLowerCase();
@@ -1917,14 +1960,13 @@ export const PriceListPage: FC = () => {
                 }}
               />
 
-              {categories.map((cat) => {
-                const isSelected = selectedCategory === cat.name;
-                const count = items.filter((i) => i.category === cat.name).length;
+              {categoryListWithCounts.map((cat) => {
+                const isSelected = selectedCategory.trim().toLowerCase() === cat.name.trim().toLowerCase();
                 return (
                   <Chip
                     key={cat.name}
-                    label={`${cat.name} (${count})`}
-                    onClick={() => setSelectedCategory(cat.name)}
+                    label={`${cat.name} (${cat.count})`}
+                    onClick={() => setSelectedCategory(isSelected ? 'ALL' : cat.name)}
                     size="small"
                     sx={{
                       fontWeight: 700,
@@ -1933,6 +1975,7 @@ export const PriceListPage: FC = () => {
                       backgroundColor: isSelected ? '#1D4ED8' : '#FFFFFF',
                       color: isSelected ? '#FFFFFF' : '#334155',
                       border: isSelected ? '1px solid #1E40AF' : '1px solid #E5E7EB',
+                      boxShadow: isSelected ? '0 1px 4px rgba(29, 78, 216, 0.25)' : 'none',
                       '&:hover': {
                         backgroundColor: isSelected ? '#1E40AF' : '#F3F4F6',
                       },
@@ -3309,12 +3352,12 @@ SPARKLERS
                   onChange={(e) => setFormCategory(e.target.value)}
                   sx={{ fontSize: '13.5px', fontWeight: 600 }}
                 >
-                  {categories.map((c) => (
+                  {categoryListWithCounts.map((c) => (
                     <MenuItem key={c.name} value={c.name}>
                       {c.name}
                     </MenuItem>
                   ))}
-                  {categories.every((c) => c.name !== formCategory) && (
+                  {categoryListWithCounts.every((c) => c.name.toLowerCase() !== formCategory.toLowerCase()) && (
                     <MenuItem value={formCategory}>{formCategory}</MenuItem>
                   )}
                 </Select>

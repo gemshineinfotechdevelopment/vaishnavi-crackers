@@ -37,7 +37,7 @@ import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined';
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import { ProductsApi, CategoriesApi, PriceListsApi } from '../services/api';
 import { printProductsListDirectly } from '../utils/printUtils';
-import { formatProductCode } from '../utils/productUtils';
+import { formatProductCode, inferCategoryFromProductName, STANDARD_CRACKER_CATEGORIES } from '../utils/productUtils';
 
 export interface ProductItem {
   _id?: string;
@@ -96,13 +96,15 @@ export const ProductsPage: FC = () => {
           const key = (p.name || '').toLowerCase().trim();
           seenNames.add(key);
           const priceItem = priceMap.get(key);
+          const rawCat = priceItem?.category || p.category || 'General';
+          const inferredCat = inferCategoryFromProductName(p.name, rawCat);
 
           mergedProducts.push({
             _id: p._id || p.id,
             id: p._id || p.id,
             slNo: p.slNo || idx + 1,
             name: p.name,
-            category: priceItem?.category || p.category || 'General',
+            category: inferredCat,
             rate: priceItem?.rate !== undefined && priceItem.rate > 0 ? priceItem.rate : (p.rate || 0),
             mrp: priceItem?.mrp !== undefined && priceItem.mrp > 0 ? priceItem.mrp : (p.mrp || 0),
             unit: priceItem?.unit || p.unit || 'Box',
@@ -118,13 +120,14 @@ export const ProductsPage: FC = () => {
           if (key && !seenNames.has(key)) {
             maxSlNo += 1;
             seenNames.add(key);
+            const inferredCat = inferCategoryFromProductName(pItem.itemName, pItem.category || 'General');
 
             mergedProducts.push({
               _id: pItem._id || pItem.id,
               id: pItem._id || pItem.id,
               slNo: pItem.slNo || maxSlNo,
               name: pItem.itemName,
-              category: pItem.category || 'General',
+              category: inferredCat,
               rate: pItem.rate || 0,
               mrp: pItem.mrp || 0,
               unit: pItem.unit || 'Box',
@@ -148,9 +151,53 @@ export const ProductsPage: FC = () => {
     fetchProductsAndPrices();
   }, []);
 
+  // Dynamically compute all categories and their product counts from products & Categories collection
+  const categoryListWithCounts = useMemo(() => {
+    const map = new Map<string, { name: string; color?: string; count: number }>();
+
+    // 1. Pre-populate standard cracker categories
+    STANDARD_CRACKER_CATEGORIES.forEach((catName) => {
+      const key = catName.toLowerCase();
+      map.set(key, { name: catName, color: undefined, count: 0 });
+    });
+
+    // 2. Add categories from Categories API
+    categories.forEach((cat) => {
+      const cleanName = (cat.name || '').trim();
+      if (cleanName) {
+        const key = cleanName.toLowerCase();
+        if (map.has(key)) {
+          map.get(key)!.color = cat.color;
+        } else {
+          map.set(key, { name: cleanName, color: cat.color, count: 0 });
+        }
+      }
+    });
+
+    // 3. Add and count categories from all merged products
+    products.forEach((p) => {
+      const catName = inferCategoryFromProductName(p.name, p.category);
+      const key = catName.toLowerCase();
+      if (map.has(key)) {
+        const item = map.get(key)!;
+        item.count += 1;
+      } else {
+        map.set(key, { name: catName, color: undefined, count: 1 });
+      }
+    });
+
+    // Only return categories that have at least 1 product
+    const list = Array.from(map.values()).filter((c) => c.count > 0);
+    // Sort by count descending so biggest categories show first
+    return list.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [categories, products]);
+
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
-      const matchesCategory = selectedCategory === 'ALL' || p.category === selectedCategory;
+      const pCat = (p.category || 'General').trim().toLowerCase();
+      const selCat = selectedCategory.trim().toLowerCase();
+      const matchesCategory = selectedCategory === 'ALL' || pCat === selCat;
+
       const rawTerm = searchTerm.trim().replace(/^#+/, '');
       if (!rawTerm) return matchesCategory;
       const term = rawTerm.toLowerCase();
@@ -174,7 +221,7 @@ export const ProductsPage: FC = () => {
   const handleOpenAdd = () => {
     setEditingProduct(null);
     setProductName('');
-    setProductCategory(categories[0]?.name || 'General');
+    setProductCategory(categoryListWithCounts[0]?.name || categories[0]?.name || 'General');
     setProductUnit('Box');
     setProductRate('0');
     setProductMrp('0');
@@ -513,22 +560,22 @@ export const ProductsPage: FC = () => {
             }}
           />
 
-          {categories.map((cat) => {
-            const isSelected = selectedCategory === cat.name;
-            const count = products.filter((p) => p.category === cat.name).length;
+          {categoryListWithCounts.map((cat) => {
+            const isSelected = selectedCategory.trim().toLowerCase() === cat.name.trim().toLowerCase();
             return (
               <Chip
                 key={cat.name}
-                label={`${cat.name} (${count})`}
-                onClick={() => setSelectedCategory(cat.name)}
+                label={`${cat.name} (${cat.count})`}
+                onClick={() => setSelectedCategory(isSelected ? 'ALL' : cat.name)}
                 size="small"
                 sx={{
                   fontWeight: 700,
                   fontSize: '12px',
                   cursor: 'pointer',
                   backgroundColor: isSelected ? '#1D4ED8' : '#FFFFFF',
-                  color: isSelected ? '#FFFFFF' : '#57463A',
-                  border: isSelected ? '1px solid #1E40AF' : '1px solid #E5E7EB',
+                  color: isSelected ? '#FFFFFF' : '#475569',
+                  border: isSelected ? '1px solid #1E40AF' : '1px solid #E2E8F0',
+                  boxShadow: isSelected ? '0 1px 4px rgba(29, 78, 216, 0.25)' : 'none',
                   '&:hover': {
                     backgroundColor: isSelected ? '#1E40AF' : '#EFF6FF',
                   },
@@ -1106,12 +1153,12 @@ export const ProductsPage: FC = () => {
                   onChange={(e) => setProductCategory(e.target.value)}
                   sx={{ fontSize: '13.5px', fontWeight: 600 }}
                 >
-                  {categories.map((c) => (
+                  {categoryListWithCounts.map((c) => (
                     <MenuItem key={c.name} value={c.name}>
                       {c.name}
                     </MenuItem>
                   ))}
-                  {categories.every((c) => c.name !== productCategory) && (
+                  {categoryListWithCounts.every((c) => c.name.toLowerCase() !== productCategory.toLowerCase()) && (
                     <MenuItem value={productCategory}>{productCategory}</MenuItem>
                   )}
                 </Select>
