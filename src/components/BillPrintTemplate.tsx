@@ -570,7 +570,8 @@ export const BillPrintTemplate: React.FC<BillPrintTemplateProps> = ({ bill, copy
                 const qNum = parseFloat(String(item.quantity || 0)) || 0;
                 const rNum = parseFloat(String(item.rate || 0)) || 0;
                 const rowAmount = item.amount ? parseFloat(String(item.amount).replace(/,/g, '')) : qNum * rNum;
-                const unitDisplay = item.pktUnit || item.unit || item.per || 'Case';
+                const rawUnit = item.pktUnit || item.unit || item.per || 'Box';
+                const unitDisplay = String(rawUnit).trim().replace(/^1\s*/i, '').trim() || 'Box';
 
                 return (
                   <tr key={idx} style={{ verticalAlign: 'top' }}>

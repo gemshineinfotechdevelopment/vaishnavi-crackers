@@ -46,6 +46,7 @@ import html2pdf from 'html2pdf.js';
 import { EwayBillsApi, ParticularsApi, CustomersApi } from '../services/api';
 import { getStoredSettings } from './SettingsPage';
 import { EwayBillPrintTemplate, type EwayBillData } from './EwayBillPrintTemplate';
+import qrCodeImg from '../assets/qr-code.png';
 
 const TRANSACTION_TYPES = [
   'Regular',
@@ -333,21 +334,21 @@ export const EwayBillPage: React.FC = () => {
   };
 
   // Distance change -> Recalculate validity duration
-  const handleDistanceChange = (distInput: number | string) => {
-    const rawNum = typeof distInput === 'number' ? distInput : parseFloat(distInput);
-    const dist = isNaN(rawNum) || rawNum < 1 ? 100 : rawNum;
-    const daysValid = Math.max(1, Math.ceil(dist / 100)); // 1 day per 100km
+  const handleDistanceChange = (distInput: string) => {
+    const rawNum = parseFloat(distInput);
+    const distForCalc = isNaN(rawNum) || rawNum < 1 ? 100 : rawNum;
+    const daysValid = Math.max(1, Math.ceil(distForCalc / 100)); // 1 day per 100km
 
     const baseDate = parseEwayDate(formData.ewayBillDate);
     const untilDate = new Date(baseDate);
     untilDate.setDate(baseDate.getDate() + daysValid);
 
-    const validFromStr = `${formData.ewayBillDate} [${dist}Kms]`;
+    const validFromStr = `${formData.ewayBillDate} [${distInput || 100}Kms]`;
     const validUntilStr = formatDateOnly(untilDate);
 
     setFormData((prev) => ({
       ...prev,
-      approxDistance: dist,
+      approxDistance: distInput as any,
       validFrom: validFromStr,
       validUntil: validUntilStr,
     }));
@@ -365,8 +366,13 @@ export const EwayBillPage: React.FC = () => {
       return;
     }
 
+    const distNum = typeof formData.approxDistance === 'number'
+      ? formData.approxDistance
+      : parseFloat(String(formData.approxDistance || 100)) || 100;
+
     const payload = {
       ...formData,
+      approxDistance: distNum,
       valueOfGoods: typeof formData.valueOfGoods === 'number'
         ? formData.valueOfGoods
         : parseFloat(String(formData.valueOfGoods || 0).replace(/,/g, '')) || 0,
@@ -430,11 +436,6 @@ export const EwayBillPage: React.FC = () => {
       ? rawNo
       : digitsOnly.replace(/(\d{4})(\d{4})(\d{4})/, '$1 $2 $3');
 
-    const qrData = encodeURIComponent(
-      `EWB:${digitsOnly}|DATE:${bill.ewayBillDate || ''}|FROM:${bill.supplierGstin || ''}|TO:${bill.recipientGstin || ''}|VAL:${bill.valueOfGoods || ''}`
-    );
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${qrData}`;
-
     const valGoodsNum = typeof bill.valueOfGoods === 'number'
       ? bill.valueOfGoods
       : parseFloat(String(bill.valueOfGoods || 0).replace(/,/g, '')) || 0;
@@ -470,6 +471,7 @@ export const EwayBillPage: React.FC = () => {
             .qr-box img {
               width: 90px;
               height: 90px;
+              object-fit: contain;
               display: inline-block;
             }
             table {
@@ -520,7 +522,7 @@ export const EwayBillPage: React.FC = () => {
         <body>
           <div class="header-title">e-Way Bill</div>
           <div class="qr-box">
-            <img src="${qrUrl}" alt="QR" />
+            <img src="${qrCodeImg}" alt="Price List QR" />
           </div>
 
           <table>
@@ -1254,7 +1256,7 @@ export const EwayBillPage: React.FC = () => {
                 type="number"
                 fullWidth
                 size="small"
-                value={formData.approxDistance || 100}
+                value={formData.approxDistance ?? ''}
                 onChange={(e) => handleDistanceChange(e.target.value)}
                 helperText="Auto-computes 1 day per 100km validity"
               />

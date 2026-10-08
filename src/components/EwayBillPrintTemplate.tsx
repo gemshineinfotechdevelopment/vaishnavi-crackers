@@ -1,4 +1,5 @@
 import React from 'react';
+import qrCodeImg from '../assets/qr-code.png';
 
 export interface EwayBillData {
   _id?: string;
@@ -37,7 +38,7 @@ export interface EwayBillData {
 
   // Meta
   billId?: string;
-  approxDistance?: number;
+  approxDistance?: number | string;
   status?: 'ACTIVE' | 'CANCELLED' | 'EXPIRED';
   remarks?: string;
 }
@@ -71,11 +72,6 @@ export const EwayBillPrintTemplate: React.FC<EwayBillPrintTemplateProps> = ({ da
   const formattedNo = rawNo.includes(' ')
     ? rawNo
     : digitsOnly.replace(/(\d{4})(\d{4})(\d{4})/, '$1 $2 $3');
-
-  const qrData = encodeURIComponent(
-    `EWB:${digitsOnly}|DATE:${data.ewayBillDate || ''}|FROM:${data.supplierGstin || ''}|TO:${data.recipientGstin || ''}|VAL:${data.valueOfGoods || ''}`
-  );
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${qrData}`;
 
   const valGoodsNum = typeof data.valueOfGoods === 'number' 
     ? data.valueOfGoods 
@@ -113,9 +109,9 @@ export const EwayBillPrintTemplate: React.FC<EwayBillPrintTemplateProps> = ({ da
         {/* QR Code */}
         <div style={{ display: 'inline-block', padding: '2px', border: '1px solid #d0d0d0', borderRadius: '2px' }}>
           <img
-            src={qrUrl}
-            alt="e-Way Bill QR"
-            style={{ width: '90px', height: '90px', display: 'block' }}
+            src={qrCodeImg}
+            alt="Price List QR"
+            style={{ width: '90px', height: '90px', display: 'block', objectFit: 'contain' }}
           />
         </div>
       </div>
